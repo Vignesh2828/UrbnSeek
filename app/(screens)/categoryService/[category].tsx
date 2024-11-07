@@ -1,44 +1,45 @@
-import React, { useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
   Text,
+  ScrollView,
   RefreshControl,
   Alert,
+  TouchableOpacity,
   FlatList,
   Image,
-  Dimensions,
-  TouchableOpacity,
   ActivityIndicator,
-  Pressable,
+  Dimensions,
+  Pressable
 } from "react-native";
+import React, { useEffect, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
-import { RootState, AppDispatch } from "@/store";
-import { GET_SERVICES } from "@/store/apps/services";
-import CategoryCarousel from "@/components/CategoryCarousel";
-import SearchService from "@/components/SearchService";
-import Fuse from "fuse.js";
-import { LinearGradient } from "expo-linear-gradient"; // Import LinearGradient
-import { router } from "expo-router";
-import { REVERSE_GEO_TRACK } from "@/store/apps/reverseGeo";
+import { AppDispatch, RootState } from "@/store";
+import { GET_SERVICES, GET_SERVICES_BY_CATEGORY } from "@/store/apps/services";
+import ServiceList from "@/components/ServiceList";
 import * as Location from "expo-location";
+import { REVERSE_GEO_TRACK } from "@/store/apps/reverseGeo";
+import SearchService from "@/components/SearchService"; // Import SearchService
+import Fuse from "fuse.js"; // Import Fuse.js
+import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get('window');
 const imageHeight = width * 9 / 16;
 
-const Home: React.FC = () => {
+const CategoryShow = () => {
+  const { category } = useLocalSearchParams();
   const dispatch = useDispatch<AppDispatch>();
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [location, setLocation] = useState({ latitude: "", longitude: "" });
+  const [city, setCity] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  
   const [limit, setLimit] = useState<number>(10); // Track the current limit size
   const [loadingMore, setLoadingMore] = useState<boolean>(false); // Track loading state for infinite scroll
-  const [location, setLocation] = useState<{ latitude: string; longitude: string }>({ latitude: "", longitude: "" });
-  const [city, setCity] = useState<string>("");
-  const [searchTerm, setSearchTerm] = useState<string>("");
   const [currentImageIndexes, setCurrentImageIndexes] = useState<{ [key: string]: number }>({});
 
-  const servicesData = useSelector((state: RootState) => state.services.serviceList.data);
-  const loading = useSelector((state: RootState) => state.services.serviceList.loading);
-  const error = useSelector((state: RootState) => state.services.serviceList.error);
 
   useEffect(() => {
     fetchServices(limit);
@@ -58,18 +59,9 @@ const Home: React.FC = () => {
     }
   };
 
-  
-  
-  const locationFilteredServices = servicesData.filter((service) => service.service_city === city.toLowerCase());
 
-  const fuse = new Fuse(locationFilteredServices, {
-    keys: ["service_category", "service_title", "service_description"],
-    includeScore: true,
-    threshold: 0.3,
-  });
-  
-  const filteredServices = searchTerm ? fuse.search(searchTerm).map(result => result.item) : locationFilteredServices;
 
+  
   const handleScroll = (serviceId: string, event: any) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffsetX / width);
@@ -79,66 +71,99 @@ const Home: React.FC = () => {
     }));
   };
 
-    // Function to get user's location
-    const getUserLocation = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert("Permission to access location was denied");
-          return;
-        }
-        
-        const userLocation = await Location.getCurrentPositionAsync({});
-        setLocation({
-          latitude: userLocation.coords.latitude.toString(),
-          longitude: userLocation.coords.longitude.toString(),
-        });
-      } catch (error) {
-        console.error("Error fetching location:", error);
-      }
-    };
+  useEffect(() => {
+    if (category) {
+      dispatch(GET_SERVICES_BY_CATEGORY(String(category)));
+    }
+  }, [category]);
   
-    useEffect(() => {
-      getUserLocation();
-    }, []);
+  // Function to get user's location
+  const getUserLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission to access location was denied");
+        return;
+      }
+      
+      const userLocation = await Location.getCurrentPositionAsync({});
+      setLocation({
+        latitude: userLocation.coords.latitude.toString(),
+        longitude: userLocation.coords.longitude.toString(),
+      });
+    } catch (error) {
+      console.error("Error fetching location:", error);
+    }
+  };
 
-    const reverse = async (lat: number, long: number) => {
-      try {
-        const response = await dispatch(
-          REVERSE_GEO_TRACK({ lat: lat, lon: long })
-        );
+  useEffect(() => {
+    getUserLocation();
+  }, []);
+
+  const categoriesServices = useSelector(
+    (state: RootState) => state.services.serviceListCategory.data
+  );
+  const loading = useSelector(
+    (state: RootState) => state.services.serviceListCategory.loading
+  );
+  const error = useSelector(
+    (state: RootState) => state.services.serviceListCategory.error
+  );
   
-        if (
-          response.payload &&
-          response.payload.address &&
-          response.payload.address.city
-        ) {
-          console.log("city", response.payload.address.city);
-          setCity(response.payload.address.city);
-        } else {
-          console.log("City not found in reverse geocoding response.");
-          setCity("");
-        }
-      } catch (error) {
-        console.error("Error during reverse geocoding:", error);
-        Alert.alert("Error fetching city from reverse geocoding");
+  
+  const reverse = async (lat: number, long: number) => {
+    try {
+      const response = await dispatch(
+        REVERSE_GEO_TRACK({ lat: lat, lon: long })
+      );
+
+      if (
+        response.payload &&
+        response.payload.address &&
+        response.payload.address.city
+      ) {
+        console.log("city", response.payload.address.city);
+        setCity(response.payload.address.city);
+      } else {
+        console.log("City not found in reverse geocoding response.");
+        setCity("");
       }
-    };
-    
-    useEffect(() => {
-      reverse(Number(location.latitude), Number(location.longitude));
-    }, [location]);
+    } catch (error) {
+      console.error("Error during reverse geocoding:", error);
+      Alert.alert("Error fetching city from reverse geocoding");
+    }
+  };
+  
+  useEffect(() => {
+    reverse(Number(location.latitude), Number(location.longitude));
+  }, [location]);
+
+  const locationFilteredServices = categoriesServices.filter((service) => service.service_city === city.toLowerCase());
+
+  const fuse = new Fuse(locationFilteredServices, {
+    keys: ["service_category", "service_title", "service_description"],
+    includeScore: true,
+    threshold: 0.3,
+  });
+  
+  const filteredServices = searchTerm ? fuse.search(searchTerm).map(result => result.item) : locationFilteredServices;
 
   return (
     <LinearGradient colors={["#ffe7ba", "#fff6e5"]} style={styles.container}>
       <SearchService onSearch={setSearchTerm} />
-      <CategoryCarousel />
 
       <FlatList
         data={filteredServices}
         keyExtractor={(item) => item.service_id.toString()}
         renderItem={({ item: service }) => (
-         <View style={styles.card}>
+          <Pressable
+          key={service.service_id}
+          style={({ pressed }) => [
+            styles.card,
+            pressed && { opacity: 0.9 },
+          ]}
+          onPress={() => router.push(`/service-detail/${service.service_id}`)}
+        >
             <View>
               <FlatList
                 data={service.service_images_urls}
@@ -162,14 +187,6 @@ const Home: React.FC = () => {
                 </Text>
               </View>
             </View>
-             <Pressable
-             key={service.service_id}
-             style={({ pressed }) => [
-               
-               pressed && { opacity: 0.5 },
-             ]}
-             onPress={() => router.push(`/service-detail/${service.service_id}?city=${encodeURIComponent(city)}&userId=${service.user_id}`)}
-             >
             <View style={styles.cardContent}>
               <Text style={styles.serviceName}>{service.service_title}</Text>
               <Text style={styles.serviceLocation}>{`${service.service_city}`}</Text>
@@ -179,7 +196,6 @@ const Home: React.FC = () => {
               
             </View>
           </Pressable>
-            </View>
         )}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchServices(5)} />}
         onEndReached={loadMoreServices}
@@ -190,7 +206,7 @@ const Home: React.FC = () => {
   );
 };
 
-export default Home;
+export default CategoryShow;
 
 const styles = StyleSheet.create({
   container: {
@@ -288,3 +304,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+

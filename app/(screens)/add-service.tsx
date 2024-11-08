@@ -35,9 +35,9 @@ const AddService = () => {
   const dispatch = useDispatch<AppDispatch>();
 
   const s3 = new S3({
-    region: process.env.EXPO_PUBLIC_REGION,
-    accessKeyId:process.env.EXPO_PUBLIC_ACCESSKEYID,
-    secretAccessKey: process.env.EXPO_PUBLIC_SECREYACCESSKEY
+    region: '',
+    accessKeyId:'',
+    secretAccessKey: ''
   });
 
   const uploadToS3 = async (uri: string): Promise<string | null> => {

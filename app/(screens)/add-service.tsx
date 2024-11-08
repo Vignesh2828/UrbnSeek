@@ -48,7 +48,7 @@ const AddService = () => {
       const fileBlob = await (await fetch(uri)).blob();
 
       const params = {
-        Bucket: process.env.EXPO_PUBLIC_BUCKETNAME || "",
+        Bucket: "",
         Key: `uploads/${fileName}`,
         Body: fileBlob,
         ContentType: `image/${fileExtension}`,

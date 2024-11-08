@@ -8,6 +8,7 @@ import {
   ScrollView,
   Alert,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { useDispatch } from "react-redux";
 import { ADD_SERVICE } from "@/store/apps/services";
@@ -17,8 +18,9 @@ import { AppDispatch } from "@/store";
 import { REVERSE_GEO_TRACK } from "@/store/apps/reverseGeo";
 import { Picker } from "@react-native-picker/picker";
 import { useAuth } from "@/context/AuthContext";
-import { FontAwesome, AntDesign, MaterialIcons } from "@expo/vector-icons";
+import { FontAwesome, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { S3 } from "aws-sdk";
 
 const AddService = () => {
   const auth = useAuth();
@@ -29,7 +31,36 @@ const AddService = () => {
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false); // Added loading state
   const dispatch = useDispatch<AppDispatch>();
+
+  const s3 = new S3({
+    region: "eu-north-1", // Example: 'us-west-2'
+    accessKeyId: "AKIA4SYAMI2NSXHRKS67", // Don't hardcode in production; use a secure method
+    secretAccessKey: "4G/gj3hv2s6FgmRRPZ2NU4+hOaPqivbR1gYvBnuc", // Same as above
+  });
+
+  const uploadToS3 = async (uri: string): Promise<string | null> => {
+    try {
+      const fileName = uri.split("/").pop(); // Get the file name
+      const fileExtension = fileName?.split(".").pop(); // Get file extension
+
+      const fileBlob = await (await fetch(uri)).blob();
+
+      const params = {
+        Bucket: "urbnseek-services",
+        Key: `uploads/${fileName}`,
+        Body: fileBlob,
+        ContentType: `image/${fileExtension}`,
+      };
+
+      const data = await s3.upload(params).promise(); // Upload file to S3
+      return data.Location; // Return the image URL from S3
+    } catch (error) {
+      console.error("Error uploading image to S3:", error);
+      return null;
+    }
+  };
 
   const getUserLocation = async () => {
     try {
@@ -69,33 +100,49 @@ const AddService = () => {
   };
 
   const handleSubmit = async () => {
-    if (!name || !description || !price || images.length === 0 || !category) {
-      alert("Please fill all fields");
-      return;
+    try {
+      if (!name || !description || !price || images.length === 0 || !category) {
+        alert("Please fill all fields");
+        return;
+      }
+
+      setLoading(true); // Start loading
+
+      const uploadedImageUrls = await Promise.all(
+        images.map((imageUri) => uploadToS3(imageUri))
+      );
+      const validImageUrls = uploadedImageUrls.filter((url) => url !== null);
+
+      const serviceData = {
+        user_id: String(auth.user?.user_id || 0),
+        service_title: name,
+        service_description: description,
+        service_lat: Number(location.latitude),
+        service_lon: Number(location.longitude),
+        service_city: city,
+        service_price: Number(price),
+        service_category: category,
+        service_images_urls: validImageUrls,
+        service_completed_works_images: validImageUrls,
+      };
+
+      console.log("Service Data:", serviceData);
+
+      await dispatch(ADD_SERVICE({ serviceData }));
+      alert("Service added successfully!");
+
+      // Reset form
+      setName("");
+      setDescription("");
+      setPrice("");
+      setCategory("");
+      setImages([]);
+    } catch (error) {
+      console.error("Error adding service:", error);
+      alert("Failed to add service");
+    } finally {
+      setLoading(false); // Stop loading
     }
-
-    const serviceData = {
-      user_id: String(auth.user?.user_id || 0),
-      service_title: name,
-      service_description: description,
-      service_lat: Number(location.latitude),
-      service_lon: Number(location.longitude),
-      service_city: city,
-      service_price: Number(price),
-      service_category: category,
-      service_images_urls: images,
-      service_completed_works_images: images,
-    };
-
-    console.log("Service Data:", serviceData);
-    await dispatch(ADD_SERVICE({ serviceData }));
-
-    setName("");
-    setDescription("");
-    setPrice("");
-    setCategory("");
-    setImages([]);
-    alert("Service added successfully!");
   };
 
   useEffect(() => {
@@ -156,7 +203,7 @@ const AddService = () => {
           editable={false}
         />
 
-<View style={styles.inputWrapper}>
+        <View style={styles.inputWrapper}>
           <MaterialIcons name="currency-rupee" size={20} color="#B0BEC5" style={styles.inputIcon} />
           <TextInput
             autoCapitalize="none"
@@ -190,11 +237,7 @@ const AddService = () => {
         {images.length > 0 && (
           <View style={styles.imagePreview}>
             {images.map((imageUri, index) => (
-              <Image
-                key={index}
-                source={{ uri: imageUri }}
-                style={styles.image}
-              />
+              <Image key={index} source={{ uri: imageUri }} style={styles.image} />
             ))}
           </View>
         )}
@@ -202,9 +245,13 @@ const AddService = () => {
         <TouchableOpacity
           style={styles.submitButton}
           onPress={handleSubmit}
-          disabled={city === ""}
+          disabled={loading || city === ""}
         >
-          <Text style={styles.submitButtonText}>Add Service</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.submitButtonText}>Add Service</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
